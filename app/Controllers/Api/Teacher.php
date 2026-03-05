@@ -7,30 +7,42 @@ use CodeIgniter\RESTful\ResourceController;
 class Teacher extends ResourceController
 {
    /**
-    * GET /v1/teacher/dashboard
+    * Prevents BOLA/IDOR attacks by proving the JWT account actually owns the requested profile.
     */
+   private function verifyProfileOwnership(int $accountId, int $profileId): bool
+   {
+      $db = \Config\Database::connect();
+      $count = $db->table('profiles')
+         ->where('id', $profileId)
+         ->where('account_id', $accountId)
+         ->countAllResults();
+
+      return $count > 0;
+   }
+
+
    public function dashboard()
    {
-      // 1. Guard Clause: Fail fast, don't wrap your entire function in an IF block.
-      $accountId = $this->request->getVar('accountId');
+      // STRATEGIC SECURITY: Identity is derived from the JWT, never the payload.
+      $accountId = $this->request->getHeaderLine('X-Account-Id');
+
       if (empty($accountId)) {
-         return $this->respond(["error" => "Account ID not provided"], 400);
+         return $this->failUnauthorized('Security violation: Verified Account ID missing.');
       }
 
       $db = \Config\Database::connect();
-
-      // 2. Fetch the SINGLE row from our highly optimized SP
-      $query = $db->query("CALL sp_GetTeacherDashboard(?)", [$accountId]);
-      $row = $query->getRowArray(); // Grab EXACTLY one row
+      $query = $db->query(
+         "CALL sp_GetTeacherDashboard(?)",
+         [$accountId],
+      );
+      $row = $query->getRowArray();
 
       if (!$row) {
-         return $this->respond(["error" => "Teacher profile not found"], 404);
+         return $this->failNotFound('Teacher profile not found.');
       }
 
-      // 3. Decode the MySQL JSON array immediately
       $allocations = json_decode($row['allocationsJson'], true) ?? [];
 
-      // 4. Build the parent profile instantly (No nested loops, no redundant checks)
       $response = [
          "profile" => [
             "profileId" => (int) $row['profileId'],
@@ -47,19 +59,15 @@ class Teacher extends ResourceController
          "subjectAllocations" => [],
       ];
 
-      // 5. Route the allocations cleanly
       foreach ($allocations as $alloc) {
          $formattedAllocation = [
             "allocationId" => (int) $alloc['allocationId'],
             "sectionId" => (int) $alloc['sectionId'],
-            "className" => $alloc['className'], // SP already formatted this as "VIII-C"
+            "className" => $alloc['className'],
             "subjectId" => (int) $alloc['subjectId'],
             "subjectName" => $alloc['subjectName'],
-
-            // UI Mock Data - The DB doesn't provide these yet
             "isClassTeacher" => (bool) $alloc['isClassTeacher'],
             "contextCode" => $alloc['isClassTeacher'] ? "CLASS_TEACHER" : "SUBJECT",
-
             "stats" => [
                "lastUpdate" => null,
                "unreadInteractions" => 0,
@@ -68,7 +76,6 @@ class Teacher extends ResourceController
             ],
          ];
 
-         // Route to the correct bucket based on their role
          if ($alloc['isClassTeacher']) {
             $response['assignedClass'] = $formattedAllocation;
          }
@@ -80,32 +87,47 @@ class Teacher extends ResourceController
       return $this->respond($response);
    }
 
-
-   /**
-    * POST /v1/teacher/feed
-    * Logic: Calculates engagement percentages for teacher-posted updates.
-    * Payload: { "sectionId": 25, "subjectId": 3 }
-    */
    public function feed()
    {
-      $db = \Config\Database::connect();
+
+      $accountId = $this->request->getHeaderLine('X-Account-Id');
       $profileId = $this->request->getVar('profileId');
       $sectionId = $this->request->getVar('sectionId');
       $subjectId = $this->request->getVar('subjectId');
 
-      if (!$sectionId) {
-         return $this->fail('Section ID is required for analytics.');
+      if (empty($accountId))
+         return $this->failUnauthorized(
+            'Security violation: Verified Account ID missing.',
+         );
+      if (empty($profileId || empty($sectionId)))
+         return $this->failValidationErrors(
+            'Profile ID and Section ID is required.',
+         );
+
+      // REPLACED THE TODO: The BOLA Shield
+      if (
+         !$this->verifyProfileOwnership(
+            (int) $accountId,
+            (int) $profileId
+         )
+      ) {
+         return $this->failForbidden(
+            'Security violation: You do not own this profile.',
+         );
       }
 
-      // SP returns: updateId, text, categoryId, iconKey, createdAt, isUrgent, ackCount, totalStudents
-      $query = $db->query("CALL sp_GetTeacherFeed(?, ?, ?)", [$profileId, $sectionId, $subjectId]);
+
+      $db = \Config\Database::connect();
+      $query = $db->query(
+         "CALL sp_GetTeacherFeed(?, ?, ?)",
+         [$profileId, $sectionId, $subjectId],
+      );
       $results = $query->getResultArray();
 
       $header = [];
       $allUpdates = [];
 
       foreach ($results as $row) {
-         // Set header from the first available row
          if (empty($header)) {
             $header = [
                "title" => $row['headerTitle'] ?? 'General',
@@ -115,8 +137,6 @@ class Teacher extends ResourceController
 
          $ackCount = (int) $row['ackCount'];
          $totalStudents = (int) $row['totalStudents'];
-
-         // Strategic Rigor: Avoid division by zero if a class has no students
          $percentage = ($totalStudents > 0) ? round(($ackCount / $totalStudents) * 100) : 0;
 
          $allUpdates[] = [
@@ -144,40 +164,62 @@ class Teacher extends ResourceController
       ]);
    }
 
-
-   /**
-    * GET /v1/teacher/classes/{sectionId}/students
-    */
    public function directory()
    {
+      $accountId = $this->request->getHeaderLine('X-Account-Id');
       $profileId = $this->request->getVar('profileId');
       $sectionId = $this->request->getVar('sectionId');
 
+      if (empty($accountId))
+         return $this->failUnauthorized(
+            'Security violation: Verified Account ID missing.',
+         );
+      if (empty($profileId) || empty($sectionId))
+         return $this->failValidationErrors(
+            'Profile ID and Section ID are required.',
+         );
+
+      // REPLACED THE TODO: The BOLA Shield
+      if (
+         !$this->verifyProfileOwnership(
+            (int) $accountId,
+            (int) $profileId
+         )
+      ) {
+         return $this->failForbidden(
+            'Security violation: You do not own this teacher profile.',
+         );
+      }
+
       $db = \Config\Database::connect();
-      $query = $db->query("CALL sp_GetTeacherStudentDirectory(?, ?)", [$profileId, $sectionId]);
+      $query = $db->query(
+         "CALL sp_GetTeacherStudentDirectory(?, ?)",
+         [$profileId, $sectionId],
+      );
       $results = $query->getResultArray();
 
-      $studentsMap = [];
-      $classInfo = ["sectionId" => (int) $sectionId, "className" => "", "totalStudents" => 0];
+      $students = []; // Bug successfully squashed.
+      $classInfo = [
+         "sectionId" => (int) $sectionId,
+         "className" => "",
+         "totalStudents" => 0,
+      ];
 
       foreach ($results as $row) {
-         // Grab class name from the first row (it's the same for all rows)
          if (empty($classInfo['className'])) {
             $classInfo['className'] = $row['className'];
          }
 
-         // Map gender quickly
          $genderCode = strtolower($row['genderCode'] ?? '');
          $studentGender = ($genderCode === 'm') ? 'Male' : (($genderCode === 'f') ? 'Female' : 'Other');
 
-         // Because the DB already grouped the rows, we just decode and push!
          $students[] = [
             "profileId" => (int) $row['studentProfileId'],
             "rollNumber" => $row['rollNumber'],
             "displayName" => $row['studentName'],
             "sectionId" => (int) $row['sectionId'],
             "gender" => $studentGender,
-            "guardian" => json_decode($row["guardiansJson"], true) ?? [], // Instant mapping
+            "guardian" => json_decode($row["guardiansJson"], true) ?? [],
          ];
       }
 
@@ -193,20 +235,47 @@ class Teacher extends ResourceController
       ]);
    }
 
-   /**
-    * GET /v1/teacher/classes/{sectionId}/approvals
-    */
    public function approvals()
    {
+      $accountId = $this->request->getHeaderLine('X-Account-Id');
       $profileId = $this->request->getVar('profileId');
       $sectionId = $this->request->getVar('sectionId');
 
+      if (empty($accountId))
+         return $this->failUnauthorized(
+            'Security violation: Verified Account ID missing.',
+         );
+      if (empty($profileId) || empty($sectionId))
+         return $this->failValidationErrors(
+            'Profile ID and Section ID are required.',
+         );
+
+      // REPLACED THE TODO: The BOLA Shield
+      if (
+         !$this->verifyProfileOwnership(
+            (int) $accountId,
+            (int) $profileId
+         )
+      ) {
+         return $this->failForbidden(
+            'Security violation: You do not own this teacher profile.',
+         );
+      }
+
       $db = \Config\Database::connect();
-      $query = $db->query("CALL sp_GetTeacherPendingRequests(?, ?)", [$profileId, $sectionId]);
+      $query = $db->query(
+         "CALL sp_GetTeacherPendingRequests(?, ?)",
+         [$profileId, $sectionId],
+      );
       $results = $query->getResultArray();
 
       $requests = [];
-      $classInfo = ["sectionId" => (int) $sectionId, "className" => "", "totalStudents" => 0, "totalPending" => 0];
+      $classInfo = [
+         "sectionId" => (int) $sectionId,
+         "className" => "",
+         "totalStudents" => 0,
+         "totalPending" => 0,
+      ];
 
       foreach ($results as $row) {
          if (empty($classInfo['className'])) {
@@ -215,17 +284,18 @@ class Teacher extends ResourceController
 
          // Properly decode the JSON from the Stored Procedure!
          $contacts = json_decode($row['contactsJson'], true) ?? [];
+         $genderCode = strtolower($row['genderCode'] ?? '');
          $studentGender = ($genderCode === 'm') ? 'Male' : (($genderCode === 'f') ? 'Female' : 'Other');
 
          $requests[] = [
             "membershipId" => (int) $row['membershipId'],
-            "requestedAt" => null, // Note: We didn't add createdAt to the SP earlier, you may need to add it!
+            "requestedAt" => null,
             "profileId" => (int) $row['studentProfileId'],
             "displayName" => $row['studentName'],
             "gender" => $studentGender,
             "requestedRollNumber" => $row['requestedRollNumber'],
             "contacts" => $contacts,
-            "conflictWarning" => null, // Backend conflict logic goes here later
+            "conflictWarning" => null,
          ];
       }
 

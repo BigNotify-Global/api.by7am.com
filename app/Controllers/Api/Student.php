@@ -6,17 +6,38 @@ use CodeIgniter\RESTful\ResourceController;
 
 class Student extends ResourceController
 {
+   /**
+    * Prevents BOLA/IDOR attacks by proving the JWT account actually owns the requested profile.
+    */
+   private function verifyProfileOwnership(int $accountId, int $profileId): bool
+   {
+      $db = \Config\Database::connect();
+      $count = $db->table('profiles')
+         ->where('id', $profileId)
+         ->where('account_id', $accountId)
+         ->countAllResults();
+
+      return $count > 0;
+   }
+
    public function dashboard()
    {
-      $accountId = $this->request->getVar('accountId');
-      if (empty($accountId))
-         return $this->failValidationErrors('Account ID is required.');
+      // SECURITY LOCK: The frontend no longer dictates who it is requesting data for.
+      $accountId = $this->request->getHeaderLine('X-Account-Id');
+
+      if (empty($accountId)) {
+         return $this->failUnauthorized('Security violation: Verified Account ID missing.');
+      }
 
       $db = \Config\Database::connect();
-      $results = $db->query("CALL sp_GetStudentDashboard(?)", [$accountId])->getResultArray();
+      $results = $db->query(
+         "CALL sp_GetStudentDashboard(?)",
+         [$accountId],
+      )->getResultArray();
 
-      if (empty($results))
+      if (empty($results)) {
          return $this->failNotFound('Student profile not found.');
+      }
 
       $linkedSchools = [];
 
@@ -55,20 +76,43 @@ class Student extends ResourceController
       return $this->respond(["linkedSchools" => array_values($linkedSchools)]);
    }
 
-
    public function board()
    {
+      $accountId = $this->request->getHeaderLine('X-Account-Id');
       $profileId = $this->request->getVar('profileId');
+
+      if (empty($accountId))
+         return $this->failUnauthorized(
+            'Security violation: Verified Account ID missing.',
+         );
       if (empty($profileId))
-         return $this->failValidationErrors('Profile ID is required.');
+         return $this->failValidationErrors(
+            'Profile ID is required.',
+         );
+
+      // REPLACED THE TODO: The BOLA Shield
+      if (
+         !$this->verifyProfileOwnership(
+            (int) $accountId,
+            (int) $profileId
+         )
+      ) {
+         return $this->failForbidden(
+            'Security violation: You do not own this profile.',
+         );
+      }
+
 
       $db = \Config\Database::connect();
-      $results = $db->query("CALL sp_GetStudentBoard(?)", [$profileId])->getResultArray();
+      $results = $db->query(
+         "CALL sp_GetStudentBoard(?)",
+         [$profileId],
+      )->getResultArray();
 
-      if (empty($results))
+      if (empty($results)) {
          return $this->failNotFound('Board data not found.');
+      }
 
-      // Initialize the response structure instantly from the first row
       $response = [
          "schoolBoard" => ["totalUpdates" => (int) $results[0]["boardTotalUpdates"]],
          "classTeacher" => null,
@@ -105,21 +149,43 @@ class Student extends ResourceController
 
    public function feed()
    {
+      $accountId = $this->request->getHeaderLine('X-Account-Id');
       $profileId = $this->request->getVar('profileId');
       $subjectId = $this->request->getVar('subjectId');
 
-      if (empty($profileId) || empty($subjectId)) {
-         return $this->failValidationErrors('Profile ID and Subject ID are required.');
+      if (empty($accountId))
+         return $this->failUnauthorized(
+            'Security violation: Verified Account ID missing.',
+         );
+      if (empty($profileId || empty($subjectId)))
+         return $this->failValidationErrors(
+            'Profile ID and Subject ID is required.',
+         );
+
+      // REPLACED THE TODO: The BOLA Shield
+      if (
+         !$this->verifyProfileOwnership(
+            (int) $accountId,
+            (int) $profileId
+         )
+      ) {
+         return $this->failForbidden(
+            'Security violation: You do not own this profile.',
+         );
       }
 
       $db = \Config\Database::connect();
-      $results = $db->query("CALL sp_GetStudentFeed(?, ?)", [$profileId, $subjectId])->getResultArray();
+      $results = $db->query(
+         "CALL sp_GetStudentFeed(?, ?)",
+         [$profileId, $subjectId],
+      )->getResultArray();
 
       if (empty($results)) {
-         return $this->respond(["header" => null, "allUpdates" => []]); // Empty state, not a 404 error
+         return $this->respond(
+            ["header" => null, "allUpdates" => []],
+         );
       }
 
-      // Header comes from the first row natively
       $header = [
          "title" => $results[0]['subjectName'],
          "subtitle" => $results[0]['teacherName'],

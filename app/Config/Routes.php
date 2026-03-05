@@ -7,6 +7,13 @@ use CodeIgniter\Router\RouteCollection;
  */
 
 $routes->group('v1', ['namespace' => 'App\Controllers\Api'], function ($routes) {
+   // --- Admin Endpoints ---
+   $routes->group('admin', function ($routes) {
+      $routes->post('addAccount', 'Admin::addUpdateAccount');
+      $routes->post('createProfile', 'Admin::createProfile');
+    // Payload: { "id": "142" }
+   });
+
    // --- Student Endpoints ---
    $routes->group('student', function ($routes) {
       $routes->post('dashboard', 'Student::dashboard'); // Payload: { "id": "142" }
