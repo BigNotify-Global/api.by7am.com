@@ -1,69 +1,206 @@
-# CodeIgniter 4 Application Starter
+# by7am API
 
-## What is CodeIgniter?
+A robust RESTful API for the by7am educational platform built with CodeIgniter 4. This API provides endpoints for students and teachers to access dashboards, feeds, class information, and approval workflows within an academic management system.
 
-CodeIgniter is a PHP full-stack web framework that is light, fast, flexible and secure.
-More information can be found at the [official site](https://codeigniter.com).
+## Features
 
-This repository holds a composer-installable app starter.
-It has been built from the
-[development repository](https://github.com/codeigniter4/CodeIgniter4).
+- **JWT Authentication**: Secure token-based authentication for all endpoints
+- **Student Endpoints**: Access to dashboards, activity boards, and personalized feeds
+- **Teacher Endpoints**: Dashboard, feed management, student directory, and approval workflows
+- **RESTful Design**: Clean, organized API structure with versioning (v1)
+- **Database-Driven**: MySQL database integration with migration support
+- **Testing**: PHPUnit test suite for reliability and maintainability
+- **Scalable Architecture**: Built with CodeIgniter 4 framework for performance and scalability
 
-More information about the plans for version 4 can be found in [CodeIgniter 4](https://forum.codeigniter.com/forumdisplay.php?fid=28) on the forums.
+## Tech Stack
 
-You can read the [user guide](https://codeigniter.com/user_guide/)
-corresponding to the latest version of the framework.
+- **Framework**: CodeIgniter 4.7
+- **Language**: PHP 8.2+
+- **Database**: MySQL
+- **Authentication**: Firebase PHP-JWT
+- **Testing**: PHPUnit
 
-## Installation & updates
+## Getting Started
 
-`composer create-project codeigniter4/appstarter` then `composer update` whenever
-there is a new release of the framework.
+### Prerequisites
 
-When updating, check the release notes to see if there are any changes you might need to apply
-to your `app` folder. The affected files can be copied or merged from
-`vendor/codeigniter4/framework/app`.
+- PHP 8.2 or higher
+- Composer
+- MySQL 8.0 or higher
+- Git
 
-## Setup
+### Installation
 
-Copy `env` to `.env` and tailor for your app, specifically the baseURL
-and any database settings.
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/BigNotify-Global/api.by7am.com.git
+   cd api.by7am.com
+   ```
 
-## Important Change with index.php
+2. Install dependencies:
+   ```bash
+   composer install
+   ```
 
-`index.php` is no longer in the root of the project! It has been moved inside the *public* folder,
-for better security and separation of components.
+3. Configure environment variables:
+   ```bash
+   cp env .env
+   ```
+   Edit `.env` and set your database credentials and other configuration values.
 
-This means that you should configure your web server to "point" to your project's *public* folder, and
-not to the project root. A better practice would be to configure a virtual host to point there. A poor practice would be to point your web server to the project root and expect to enter *public/...*, as the rest of your logic and the
-framework are exposed.
+4. Generate application key (if needed):
+   ```bash
+   php spark key:generate
+   ```
 
-**Please** read the user guide for a better explanation of how CI4 works!
+5. Run database migrations:
+   ```bash
+   php spark migrate
+   ```
 
-## Repository Management
+6. Start the development server:
+   ```bash
+   php spark serve
+   ```
 
-We use GitHub issues, in our main repository, to track **BUGS** and to track approved **DEVELOPMENT** work packages.
-We use our [forum](http://forum.codeigniter.com) to provide SUPPORT and to discuss
-FEATURE REQUESTS.
+The API will be available at `http://localhost:8080`
 
-This repository is a "distribution" one, built by our release preparation script.
-Problems with it can be raised on our forum, or as issues in the main repository.
+## API Endpoints
 
-## Server Requirements
+### Base URL
+```
+http://localhost:8080/v1
+```
 
-PHP version 8.2 or higher is required, with the following extensions installed:
+### Student Endpoints
 
-- [intl](http://php.net/manual/en/intl.requirements.php)
-- [mbstring](http://php.net/manual/en/mbstring.installation.php)
+| Method | Endpoint             | Description           | Payload                                 |
+| ------ | -------------------- | --------------------- | --------------------------------------- |
+| POST   | `/student/dashboard` | Get student dashboard | `{ "id": "142" }`                       |
+| POST   | `/student/board`     | Get student board     | `{ "profileId": 123 }`                  |
+| POST   | `/student/feed`      | Get student feed      | `{ "profileId": 123, "sectionId": 45 }` |
 
-> [!WARNING]
-> - The end of life date for PHP 7.4 was November 28, 2022.
-> - The end of life date for PHP 8.0 was November 26, 2023.
-> - The end of life date for PHP 8.1 was December 31, 2025.
-> - If you are still using below PHP 8.2, you should upgrade immediately.
-> - The end of life date for PHP 8.2 will be December 31, 2026.
+### Teacher Endpoints
 
-Additionally, make sure that the following extensions are enabled in your PHP:
+| Method | Endpoint                     | Description           | Payload                               |
+| ------ | ---------------------------- | --------------------- | ------------------------------------- |
+| POST   | `/teacher/dashboard`         | Get teacher dashboard | `{ "profileId": 123 }`                |
+| POST   | `/teacher/feed`              | Get teacher feed      | `{ "sectionId": 25, "subjectId": 5 }` |
+| POST   | `/teacher/classes/students`  | Get student directory | `{ "sectionId": 25 }`                 |
+| POST   | `/teacher/classes/approvals` | Get pending approvals | `{ "sectionId": 25 }`                 |
 
-- json (enabled by default - don't turn it off)
-- [mysqlnd](http://php.net/manual/en/mysqlnd.install.php) if you plan to use MySQL
-- [libcurl](http://php.net/manual/en/curl.requirements.php) if you plan to use the HTTP\CURLRequest library
+## Authentication
+
+All API endpoints require JWT authentication. Include the token in the request header:
+
+```
+Authorization: Bearer <your_jwt_token>
+```
+
+The API validates the token and returns a 401 Unauthorized response if the token is missing or invalid.
+
+## Project Structure
+
+```
+app/
+├── Controllers/          # API controllers
+│   ├── Api/
+│   │   ├── Admin.php
+│   │   ├── Student.php
+│   │   └── Teacher.php
+│   └── BaseController.php
+├── Models/              # Database models
+├── Filters/             # Authentication filters (JWT)
+├── Database/            # Migrations and seeds
+│   ├── Migrations/
+│   └── Seeds/
+├── Config/              # Application configuration
+└── Views/               # View templates
+
+public/                  # Web root
+tests/                   # Test suite
+vendor/                  # Composer dependencies
+```
+
+## Database Setup
+
+Database migrations are located in `app/Database/Migrations/`. Run migrations with:
+
+```bash
+php spark migrate
+```
+
+To rollback migrations:
+
+```bash
+php spark migrate:rollback
+```
+
+## Testing
+
+Run the test suite using:
+
+```bash
+composer test
+```
+
+Or directly with PHPUnit:
+
+```bash
+php vendor/bin/phpunit
+```
+
+Tests are located in the `tests/` directory.
+
+## Configuration
+
+Key configuration files:
+
+- `app/Config/App.php` - Application settings
+- `app/Config/Database.php` - Database configuration
+- `app/Config/Routes.php` - API routes definition
+- `.env` - Environment variables (create from `env` file)
+
+## Development
+
+### Adding New Endpoints
+
+1. Create a controller in `app/Controllers/Api/`
+2. Define routes in `app/Config/Routes.php`
+3. Implement JWT authentication in the controller or apply the JwtAuthFilter
+4. Create corresponding models and migrations
+5. Write tests in `tests/`
+
+### Database Migrations
+
+Create a new migration:
+
+```bash
+php spark make:migration CreateTableName
+```
+
+## Troubleshooting
+
+- **Database connection error**: Check your `.env` file and ensure MySQL is running
+- **JWT validation fails**: Verify your token format and ensure it's valid
+- **404 errors**: Check route definitions in `app/Config/Routes.php`
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For issues and questions, please create an issue on the [GitHub repository](https://github.com/BigNotify-Global/api.by7am.com).
+
+## Author
+
+BigNotify Global
