@@ -11,7 +11,11 @@ $routes->group('v1', ['namespace' => 'App\Controllers\Api'], function ($routes) 
    $routes->group('admin', function ($routes) {
       $routes->post('addAccount', 'Admin::addUpdateAccount');
       $routes->post('createProfile', 'Admin::createProfile');
-    // Payload: { "id": "142" }
+   });
+
+   // --- Admin Endpoints ---
+   $routes->group('uni', function ($routes) {
+      $routes->post('createUpdate', 'Admin::addUpdateAccount');
    });
 
    // --- Student Endpoints ---
