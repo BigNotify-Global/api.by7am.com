@@ -9,7 +9,7 @@ use CodeIgniter\Router\RouteCollection;
 $routes->group('v1', ['namespace' => 'App\Controllers\Api'], function ($routes) {
    // --- Admin Endpoints ---
    $routes->group('admin', function ($routes) {
-      $routes->post('addAccount', 'Admin::addUpdateAccount');
+      $routes->post('demo', 'Admin::demo');
    });
 
    // --- Profile Endpoints ---
@@ -18,26 +18,26 @@ $routes->group('v1', ['namespace' => 'App\Controllers\Api'], function ($routes) 
       $routes->post('createProfile', 'Profile::createProfile');
    });
 
-   // --- Admin Endpoints ---
+   // --- Uni Endpoints ---
    $routes->group('uni', function ($routes) {
       $routes->post('createUpdate', 'Uni::createUpdate');
    });
 
    // --- Student Endpoints ---
    $routes->group('student', function ($routes) {
-      $routes->post('dashboard', 'Student::dashboard');
-      $routes->post('board', 'Student::board');
-      $routes->post('feed', 'Student::feed');
+      $routes->get('dashboard', 'Student::dashboard');
+      $routes->get('board', 'Student::board');
+      $routes->get('feed', 'Student::feed');
    });
 
    // --- Teacher Endpoints ---
    $routes->group('teacher', function ($routes) {
-      $routes->post('dashboard', 'Teacher::dashboard');
-      $routes->post('feed', 'Teacher::feed');
+      $routes->get('dashboard', 'Teacher::dashboard');
+      $routes->get('feed', 'Teacher::feed');
 
       $routes->group('classes', function ($routes) {
-         $routes->post('students', 'Teacher::directory');
-         $routes->post('approvals', 'Teacher::approvals');
+         $routes->get('students', 'Teacher::directory');
+         $routes->get('approvals', 'Teacher::approvals');
       });
    });
 });

@@ -3,6 +3,9 @@
 namespace App\Controllers\Api;
 
 use CodeIgniter\RESTful\ResourceController;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
+use Exception;
 
 class Profile extends ResourceController
 {
@@ -22,8 +25,8 @@ class Profile extends ResourceController
     }
 
     /**
-     * POST /v1/admin/sync
-     * This is the front door. It expects a raw UID from Firebase and syncs it.
+     * POST /v1/profile/addAccount
+     * The Front Door & Token Exchange: Syncs Firebase data and mints the session JWT.
      */
     public function addUpdateAccount()
     {
@@ -40,25 +43,53 @@ class Profile extends ResourceController
         }
 
         $db = \Config\Database::connect();
+
+        // 1. Sync the data with MySQL
         $row = $db->query(
             "CALL sp_SyncAccount(?, ?, ?, ?, ?)",
             [$accountUid, $email, $displayName, $profilePhotoUrl, $isAccountVerified],
         )->getRowArray();
 
         if (!$row) {
-            return $this->failServerError(
-                'Critical error: Failed to sync account with the database.',
-            );
+            return $this->failServerError('Critical error: Failed to sync account with the database.');
         }
 
+        // --- THE MINTING PRESS ---
+
+        // Note: Ensure your sp_SyncAccount returns the internal integer ID.
+        // I am assuming it returns as 'id' or 'accountId'.
+        $internalAccountId = $row['id'] ?? $row['accountId'] ?? null;
+
+        if (!$internalAccountId) {
+            return $this->failServerError('Database did not return the internal Account ID required for authentication.');
+        }
+
+        $secretKey = getenv('JWT_SECRET');
+        $issuedAt = time();
+        $expirationTime = $issuedAt + (30 * 24 * 60 * 60); // Token valid for 1 month
+
+        $payload = [
+            'iss' => 'api.by7am.com',
+            'aud' => 'app.by7am.com',
+            'iat' => $issuedAt,
+            'exp' => $expirationTime,
+            'sub' => $accountUid,
+            'accountId' => (int) $internalAccountId
+        ];
+
+        // 2. Generate the stateless token
+        $customToken = JWT::encode($payload, $secretKey, 'HS256');
+
+        // 3. Return the synced data AND the token in one shot
         return $this->respond([
-            "message" => "Account synchronized successfully.",
+            "message" => "Account synchronized and authenticated successfully.",
+            "token" => $customToken,
             "account" => $row,
         ]);
     }
 
     /**
-     * POST /v1/profile/create
+     * POST /v1/profile/createProfile
      * Creates a new profile using the Omni-Profile Stored Procedure.
      */
     public function createProfile()
@@ -91,7 +122,6 @@ class Profile extends ResourceController
         // Privilege Escalation Prevention
         $requestedStatusId = $this->request->getVar('statusId');
 
-        // REPLACED THE TODO: We actually verify admin status against the database now.
         $isCallerAdmin = $this->checkIsAdmin((int) $accountId);
 
         if (!$isCallerAdmin) {
