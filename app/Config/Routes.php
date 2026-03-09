@@ -18,11 +18,6 @@ $routes->group('v1', ['namespace' => 'App\Controllers\Api'], function ($routes) 
       $routes->post('createProfile', 'Profile::createProfile');
    });
 
-   // --- Uni Endpoints ---
-   $routes->group('uni', function ($routes) {
-      $routes->post('createUpdate', 'Uni::createUpdate');
-   });
-
    // --- Student Endpoints ---
    $routes->group('student', function ($routes) {
       $routes->get('dashboard', 'Student::dashboard');
@@ -35,9 +30,12 @@ $routes->group('v1', ['namespace' => 'App\Controllers\Api'], function ($routes) 
       $routes->get('dashboard', 'Teacher::dashboard');
       $routes->get('feed', 'Teacher::feed');
 
+      $routes->post('createUpdate', 'Teacher::createUpdate');
+
       $routes->group('classes', function ($routes) {
          $routes->get('students', 'Teacher::directory');
          $routes->get('approvals', 'Teacher::approvals');
+         $routes->post('enrollments', 'Teacher::manageEnrollment');
       });
    });
 });
