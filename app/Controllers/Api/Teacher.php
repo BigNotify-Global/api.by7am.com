@@ -89,79 +89,74 @@ class Teacher extends ResourceController
 
    public function feed()
    {
-
       $accountId = $this->request->getHeaderLine('X-Account-Id');
       $profileId = $this->request->getVar('profileId');
       $sectionId = $this->request->getVar('sectionId');
       $subjectId = $this->request->getVar('subjectId');
 
-      if (empty($accountId))
-         return $this->failUnauthorized(
-            'Security violation: Verified Account ID missing.',
-         );
-      if (empty($profileId || empty($sectionId)))
-         return $this->failValidationErrors(
-            'Profile ID and Section ID is required.',
-         );
-
-      // REPLACED THE TODO: The BOLA Shield
-      if (
-         !$this->verifyProfileOwnership(
-            (int) $accountId,
-            (int) $profileId
-         )
-      ) {
-         return $this->failForbidden(
-            'Security violation: You do not own this profile.',
-         );
+      if (empty($accountId)) {
+         return $this->failUnauthorized('Security violation: Verified Account ID missing.');
       }
 
+      // FIXED THE TRAP: Account for sectionId, and allow subjectId to be '0'
+      if (empty($profileId) || empty($sectionId) || !isset($subjectId) || $subjectId === '') {
+         return $this->failValidationErrors('Profile ID, Section ID, and Subject ID are required.');
+      }
+
+      if (!$this->verifyProfileOwnership((int) $accountId, (int) $profileId)) {
+         return $this->failForbidden('Security violation: You do not own this profile.');
+      }
 
       $db = \Config\Database::connect();
-      $query = $db->query(
-         "CALL sp_GetTeacherFeed(?, ?, ?)",
-         [$profileId, $sectionId, $subjectId],
-      );
-      $results = $query->getResultArray();
 
-      $header = [];
-      $allUpdates = [];
+      try {
+         // FIXED THE TRAP: Call the TEACHER stored procedure with THREE parameters
+         $results = $db->query(
+            "CALL sp_GetTeacherFeed(?, ?, ?)",
+            [$profileId, $sectionId, $subjectId],
+         )->getResultArray();
 
-      foreach ($results as $row) {
-         if (empty($header)) {
-            $header = [
-               "title" => $row['headerTitle'] ?? 'General',
-               "subtitle" => $row['headerSubtitle'],
-            ];
+         if (empty($results)) {
+            return $this->respond(["header" => null, "allUpdates" => []]);
          }
 
-         $ackCount = (int) $row['ackCount'];
-         $totalStudents = (int) $row['totalStudents'];
-         $percentage = ($totalStudents > 0) ? round(($ackCount / $totalStudents) * 100) : 0;
-
-         $allUpdates[] = [
-            "updateId" => (int) $row['updateId'],
-            "text" => $row['text'],
-            "categoryId" => (int) $row['categoryId'],
-            "createdAt" => $row['createdAt'],
-            "isUrgent" => (bool) $row['isUrgent'],
-            "engagement" => [
-               "ackCount" => $ackCount,
-               "totalStudents" => $totalStudents,
-               "percentage" => $percentage,
-               "isEveryoneAck" => ($ackCount >= $totalStudents && $totalStudents > 0),
-            ],
-            "permissions" => [
-               "canEdit" => true,
-               "canDelete" => true,
-            ],
+         $header = [
+            "title" => $results[0]['headerTitle'] ?? 'General',
+            "subtitle" => $results[0]['headerSubtitle'],
          ];
-      }
 
-      return $this->respond([
-         "header" => $header,
-         "allUpdates" => $allUpdates,
-      ]);
+         $allUpdates = array_map(function ($row) {
+            $ackCount = (int) $row['ackCount'];
+            $totalStudents = (int) $row['totalStudents'];
+            $percentage = ($totalStudents > 0) ? round(($ackCount / $totalStudents) * 100) : 0;
+
+            return [
+               "updateId" => (int) $row['updateId'],
+               "text" => $row['text'],
+               "categoryId" => (int) $row['categoryId'],
+               "createdAt" => $row['createdAt'],
+               "isUrgent" => (bool) $row['isUrgent'],
+               "engagement" => [
+                  "ackCount" => $ackCount,
+                  "totalStudents" => $totalStudents,
+                  "percentage" => $percentage,
+                  "isEveryoneAck" => ($ackCount >= $totalStudents && $totalStudents > 0),
+               ],
+               "permissions" => [
+                  "canEdit" => (bool) $row['canEdit'],
+                  "canDelete" => (bool) $row['canDelete'],
+               ],
+            ];
+         }, $results);
+
+         return $this->respond([
+            "header" => $header,
+            "allUpdates" => $allUpdates,
+         ]);
+      } catch (\Exception $e) {
+         log_message('error', '[DB Error in Teacher Feed]: ' . $e->getMessage());
+         return $this->failServerError('Failed to fetch the feed.');
+      }
    }
 
    public function directory()

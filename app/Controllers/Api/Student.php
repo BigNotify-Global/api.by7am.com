@@ -153,61 +153,57 @@ class Student extends ResourceController
       $profileId = $this->request->getVar('profileId');
       $subjectId = $this->request->getVar('subjectId');
 
-      if (empty($accountId))
-         return $this->failUnauthorized(
-            'Security violation: Verified Account ID missing.',
-         );
-      if (empty($profileId || empty($subjectId)))
-         return $this->failValidationErrors(
-            'Profile ID and Subject ID is required.',
-         );
+      if (empty($accountId)) {
+         return $this->failUnauthorized('Security violation: Verified Account ID missing.');
+      }
 
-      // REPLACED THE TODO: The BOLA Shield
-      if (
-         !$this->verifyProfileOwnership(
-            (int) $accountId,
-            (int) $profileId
-         )
-      ) {
-         return $this->failForbidden(
-            'Security violation: You do not own this profile.',
-         );
+      // FIXED THE TRAP: Use strict checks so '0' is accepted, but null/blank is rejected.
+      if (empty($profileId) || !isset($subjectId) || $subjectId === '') {
+         return $this->failValidationErrors('Profile ID and Subject ID are strictly required.');
+      }
+
+      if (!$this->verifyProfileOwnership((int) $accountId, (int) $profileId)) {
+         return $this->failForbidden('Security violation: You do not own this profile.');
       }
 
       $db = \Config\Database::connect();
-      $results = $db->query(
-         "CALL sp_GetStudentFeed(?, ?)",
-         [$profileId, $subjectId],
-      )->getResultArray();
 
-      if (empty($results)) {
-         return $this->respond(
-            ["header" => null, "allUpdates" => []],
-         );
-      }
+      try {
+         $results = $db->query(
+            "CALL sp_GetStudentFeed(?, ?)",
+            [$profileId, $subjectId],
+         )->getResultArray();
 
-      $header = [
-         "title" => $results[0]['subjectName'],
-         "subtitle" => $results[0]['teacherName'],
-         "designation" => $results[0]['teacherDesignation'],
-      ];
+         if (empty($results)) {
+            return $this->respond(["header" => null, "allUpdates" => []]);
+         }
 
-      $allUpdates = array_map(function ($row) {
-         return [
-            "updateId" => (int) $row['updateId'],
-            "categoryId" => (int) $row['categoryId'],
-            "categoryName" => $row['categoryName'],
-            "text" => $row['text'],
-            "isUrgent" => (bool) $row['isUrgent'],
-            "isLocked" => (bool) $row['isLocked'],
-            "createdAt" => $row['createdAt'],
-            "expiresAt" => $row['expiresAt'],
+         $header = [
+            "title" => $results[0]['subjectName'],
+            "subtitle" => $results[0]['teacherName'],
+            "designation" => $results[0]['teacherDesignation'],
          ];
-      }, $results);
 
-      return $this->respond([
-         "header" => $header,
-         "allUpdates" => $allUpdates,
-      ]);
+         $allUpdates = array_map(function ($row) {
+            return [
+               "updateId" => (int) $row['updateId'],
+               "categoryId" => (int) $row['categoryId'],
+               "categoryName" => $row['categoryName'],
+               "text" => $row['text'],
+               "isUrgent" => (bool) $row['isUrgent'],
+               "isLocked" => (bool) $row['isLocked'],
+               "createdAt" => $row['createdAt'],
+               "expiresAt" => $row['expiresAt'],
+            ];
+         }, $results);
+
+         return $this->respond([
+            "header" => $header,
+            "allUpdates" => $allUpdates,
+         ]);
+      } catch (\Exception $e) {
+         log_message('error', '[DB Error in Student Feed]: ' . $e->getMessage());
+         return $this->failServerError('Failed to fetch the feed.');
+      }
    }
 }
